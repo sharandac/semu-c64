@@ -1,7 +1,4 @@
 #include "device.h"
-#if !C64
-#include <assert.h>
-#endif
 #include <stdio.h>
 #include "riscv.h"
 #include "riscv_private.h"
@@ -9,53 +6,6 @@
 static bool mmu_fetch_cache_valid = false;
 static bool mmu_load_cache_valid = false;
 static bool mmu_store_cache_valid = false;
-
-/* Return the string representation of an error code identifier */
-static const char *vm_error_str(vm_error_t err)
-{
-    static const char *errors[] = {
-        "NONE",
-        "EXCEPTION",
-        "USER",
-    };
-    if (err >= 0 && err < ARRAY_SIZE(errors))
-        return errors[err];
-    return "UNKNOWN";
-}
-
-/* Return a human-readable description for a RISC-V exception cause */
-static const char *vm_exc_cause_str(uint32_t err)
-{
-    static const char *errors[] = {
-        [0] = "Instruction address misaligned",
-        [1] = "Instruction access fault",
-        [2] = "Illegal instruction",
-        [3] = "Breakpoint",
-        [4] = "Load address misaligned",
-        [5] = "Load access fault",
-        [6] = "Store/AMO address misaligned",
-        [7] = "Store/AMO access fault",
-        [8] = "Environment call from U-mode",
-        [9] = "Environment call from S-mode",
-        [12] = "Instruction page fault",
-        [13] = "Load page fault",
-        [15] = "Store/AMO page fault",
-    };
-    if (err < ARRAY_SIZE(errors))
-        return errors[err];
-    return "[Unknown]";
-}
-
-void vm_error_report(const vm_t *vm)
-{
-#if C64
-    printf("vm error %s: %s. val=%#lx\n", vm_error_str(vm->error),
-            vm_exc_cause_str(vm->exc_cause), vm->exc_val);
-#else
-    fprintf(stderr, "vm error %s: %s. val=%#x\n", vm_error_str(vm->error),
-            vm_exc_cause_str(vm->exc_cause), vm->exc_val);
-#endif
-}
 
 /* Instruction decoding */
 
@@ -844,11 +794,6 @@ void vm_step(vm_t *vm)
 
     vm->pc += 4;
     vm->insn_count++;
-#if !C64
-    /* Unlikely to overflow on such a slow platform ... */
-    if (!vm->insn_count)
-        vm->insn_count_hi++;
-#endif
     uint32_t insn_opcode = insn & MASK(7), value;
     switch (insn_opcode) {
     case RV32_OP_IMM:

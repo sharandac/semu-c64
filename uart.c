@@ -1,80 +1,20 @@
 #include <errno.h>
-#if C64
 #include <cbm.h>
-#else
-#include <poll.h>
-#include <termios.h>
-#include <unistd.h>
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "display.h"
+#include "keyboard.h"
 #include "device.h"
 #include "riscv.h"
 #include "riscv_private.h"
-#include "persistence.h"
 
-/* Emulate 8250 (plain, without loopback mode support) */
-
+extern vm_t vm;
+char *login_stop_test="buildroot login:";
 #define U8250_INT_THRE 1
 
-void save_uart(const vm_t *vm,
-               uint8_t **obufp) {
-    const emu_state_t *data = (const emu_state_t *) vm->priv;
-    const u8250_state_t uart = data->uart;
-    SER8(uart.dll);
-    SER8(uart.dlh);
-    SER8(uart.lcr);
-    SER8(uart.ier);
-    SER8(uart.current_int);
-    SER8(uart.pending_ints);
-    SER8(uart.mcr);
-    // in_fd, out_fd cannot be saved
-    SER8(uart.in_ready);
-    SER8(uart.in_char);
-}
-
-void load_uart(vm_t *vm,
-               uint8_t **ibufp) {
-    emu_state_t *data = (const emu_state_t *) vm->priv;
-    u8250_state_t* uart = &data->uart;
-    DESER8(uart->dll);
-    DESER8(uart->dlh);
-    DESER8(uart->lcr);
-    DESER8(uart->ier);
-    DESER8(uart->current_int);
-    DESER8(uart->pending_ints);
-    DESER8(uart->mcr);
-    DESER8(uart->in_ready);
-    DESER8(uart->in_char);
-}
-
-
-#if !C64
-static void reset_keyboard_input()
-{
-    /* Re-enable echo, etc. on keyboard. */
-    struct termios term;
-    tcgetattr(0, &term);
-    term.c_lflag |= ICANON | ECHO;
-    tcsetattr(0, TCSANOW, &term);
-}
-#endif
-
-/* Asynchronous communication to capture all keyboard input for the VM. */
-void capture_keyboard_input()
-{
-#if !C64
-    /* Hook exit, because we want to re-enable keyboard. */
-    atexit(reset_keyboard_input);
-
-    struct termios term;
-    tcgetattr(0, &term);
-    term.c_lflag &= ~(ICANON | ECHO | ISIG); /* Disable echo as well */
-    tcsetattr(0, TCSANOW, &term);
-#endif
-}
+/* Emulate 8250 (plain, without loopback mode support) */
 
 void u8250_update_interrupts(u8250_state_t *uart)
 {
@@ -97,153 +37,96 @@ void u8250_check_ready(u8250_state_t *uart)
 {
     if (uart->in_ready)
         return;
-#if C64
-    char cu = cbm_k_getin();
 
-    if (cu>='a' && cu<='z') cu=cu-'a'+'A';
-    else if (cu>='A' && cu<='Z') cu=cu-'A'+'a';
-    uart->in_char = cu;
+    uart->in_char = keyboard_scan();
 
     if (uart->in_char != 0)
         uart->in_ready = true;
-#else
-    struct pollfd pfd = {uart->in_fd, POLLIN, 0};
-    poll(&pfd, 1, 0);
-    if (pfd.revents & POLLIN)
-        uart->in_ready = true;
-#endif
-}
-
-extern vm_t vm;
-
-char *login_stop_test="buildroot login";
-//char *login_stop_test="syslogd";
-//char *login_stop_test="buildroot login:";
-
-static void login_stop(uint8_t value) {
-    static char *ptr = NULL;
-    if (ptr == NULL) ptr = login_stop_test;
-    if (*ptr == value) {
-        ptr++;
-    } else ptr = login_stop_test;
-    if (!*ptr) {
-        emu_state_t* emu = (emu_state_t*)vm.priv;
-        emu->stopped = true;
-    }
 }
 
 static void u8250_handle_out(u8250_state_t *uart, uint8_t value)
 {
-#if STOP_AT_LOGIN
-    login_stop(value);
-#endif
-#if C64
     (void)(uart);
-    // FIXME: adhoc PETSCII char translation, also likely incomplete
-    char cu = value;
-    if (cu == '\r') return;
-    if (cu>='a' && cu<='z') cu=cu-'a'+'A';
-    else if (cu>='A' && cu<='Z') cu=cu-'A'+'a';
-    putchar(cu);
-#else
-    if (write(uart->out_fd, &value, 1) < 1)
-        fprintf(stderr, "failed to write UART output: %s\n", strerror(errno));
-#endif
+    display_putchar(value);
 }
 
 static uint8_t u8250_handle_in(u8250_state_t *uart)
 {
     uint8_t value = 0;
     u8250_check_ready(uart);
-    if (!uart->in_ready)
-        return value;
-#if C64
-    else {
+    if ( uart->in_ready ) {
         uart->in_ready=false;
-        return uart->in_char;
-    }
-#else
-    if (read(uart->in_fd, &value, 1) < 0)
-        fprintf(stderr, "failed to read UART input: %s\n", strerror(errno));
-    uart->in_ready = false;
-    u8250_check_ready(uart);
-
-    if (value == 1) {           /* start of heading (Ctrl-a) */
-        if (getchar() == 120) { /* keyboard x */
-            printf("\n");       /* end emulator with newline */
-            exit(0);
-        }
+        value = uart->in_char;
     }
     return value;
-#endif
 }
 
 static void u8250_reg_read(u8250_state_t *uart, uint32_t addr, uint8_t *value)
 {
     switch (addr) {
-    case 0:
-        if (uart->lcr & (1 << 7)) { /* DLAB */
-            *value = uart->dll;
+        case 0:
+            if (uart->lcr & (1 << 7)) { /* DLAB */
+                *value = uart->dll;
+                break;
+            }
+            *value = u8250_handle_in(uart);
             break;
-        }
-        *value = u8250_handle_in(uart);
-        break;
-    case 1:
-        if (uart->lcr & (1 << 7)) { /* DLAB */
-            *value = uart->dlh;
+        case 1:
+            if (uart->lcr & (1 << 7)) { /* DLAB */
+                *value = uart->dlh;
+                break;
+            }
+            *value = uart->ier;
             break;
-        }
-        *value = uart->ier;
-        break;
-    case 2:
-        *value = (uart->current_int << 1) | (uart->pending_ints ? 0 : 1);
-        if (uart->current_int == U8250_INT_THRE)
-            uart->pending_ints &= ~(1 << uart->current_int);
-        break;
-    case 3:
-        *value = uart->lcr;
-        break;
-    case 4:
-        *value = uart->mcr;
-        break;
-    case 5:
-        /* LSR = no error, TX done & ready */
-        *value = 0x60 | (uint8_t) uart->in_ready;
-        break;
-    case 6:
-        /* MSR = carrier detect, no ring, data ready, clear to send. */
-        *value = 0xb0;
-        break;
-        /* no scratch register, so we should be detected as a plain 8250. */
-    default:
-        *value = 0;
+        case 2:
+            *value = (uart->current_int << 1) | (uart->pending_ints ? 0 : 1);
+            if (uart->current_int == U8250_INT_THRE)
+                uart->pending_ints &= ~(1 << uart->current_int);
+            break;
+        case 3:
+            *value = uart->lcr;
+            break;
+        case 4:
+            *value = uart->mcr;
+            break;
+        case 5:
+            /* LSR = no error, TX done & ready */
+            *value = 0x60 | (uint8_t) uart->in_ready;
+            break;
+        case 6:
+            /* MSR = carrier detect, no ring, data ready, clear to send. */
+            *value = 0xb0;
+            break;
+            /* no scratch register, so we should be detected as a plain 8250. */
+        default:
+            *value = 0;
     }
 }
 
 static void u8250_reg_write(u8250_state_t *uart, uint32_t addr, uint8_t value)
 {
     switch (addr) {
-    case 0:
-        if (uart->lcr & (1 << 7)) { /* DLAB */
-            uart->dll = value;
+        case 0:
+            if (uart->lcr & (1 << 7)) { /* DLAB */
+                uart->dll = value;
+                break;
+            }
+            u8250_handle_out(uart, value);
+            uart->pending_ints |= 1 << U8250_INT_THRE;
             break;
-        }
-        u8250_handle_out(uart, value);
-        uart->pending_ints |= 1 << U8250_INT_THRE;
-        break;
-    case 1:
-        if (uart->lcr & (1 << 7)) { /* DLAB */
-            uart->dlh = value;
+        case 1:
+            if (uart->lcr & (1 << 7)) { /* DLAB */
+                uart->dlh = value;
+                break;
+            }
+            uart->ier = value;
             break;
-        }
-        uart->ier = value;
-        break;
-    case 3:
-        uart->lcr = value;
-        break;
-    case 4:
-        uart->mcr = value;
-        break;
+        case 3:
+            uart->lcr = value;
+            break;
+        case 4:
+            uart->mcr = value;
+            break;
     }
 }
 
@@ -255,22 +138,22 @@ void u8250_read(vm_t *vm,
 {
     uint8_t u8value;
     switch (width) {
-    case RV_MEM_LBU:
-        u8250_reg_read(uart, addr, &u8value);
-        *value = (uint32_t) u8value;
-        break;
-    case RV_MEM_LB:
-        u8250_reg_read(uart, addr, &u8value);
-        *value = (uint32_t) (int8_t) u8value;
-        break;
-    case RV_MEM_LW:
-    case RV_MEM_LHU:
-    case RV_MEM_LH:
-        vm_set_exception(vm, RV_EXC_LOAD_MISALIGN, vm->exc_val);
-        return;
-    default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSTR, 0);
-        return;
+        case RV_MEM_LBU:
+            u8250_reg_read(uart, addr, &u8value);
+            *value = (uint32_t) u8value;
+            break;
+        case RV_MEM_LB:
+            u8250_reg_read(uart, addr, &u8value);
+            *value = (uint32_t) (int8_t) u8value;
+            break;
+        case RV_MEM_LW:
+        case RV_MEM_LHU:
+        case RV_MEM_LH:
+            vm_set_exception(vm, RV_EXC_LOAD_MISALIGN, vm->exc_val);
+            return;
+        default:
+            vm_set_exception(vm, RV_EXC_ILLEGAL_INSTR, 0);
+            return;
     }
 }
 
@@ -281,15 +164,15 @@ void u8250_write(vm_t *vm,
                  uint32_t value)
 {
     switch (width) {
-    case RV_MEM_SB:
-        u8250_reg_write(uart, addr, value);
-        break;
-    case RV_MEM_SW:
-    case RV_MEM_SH:
-        vm_set_exception(vm, RV_EXC_STORE_MISALIGN, vm->exc_val);
-        return;
-    default:
-        vm_set_exception(vm, RV_EXC_ILLEGAL_INSTR, 0);
-        return;
+        case RV_MEM_SB:
+            u8250_reg_write(uart, addr, value);
+            break;
+        case RV_MEM_SW:
+        case RV_MEM_SH:
+            vm_set_exception(vm, RV_EXC_STORE_MISALIGN, vm->exc_val);
+            return;
+        default:
+            vm_set_exception(vm, RV_EXC_ILLEGAL_INSTR, 0);
+            return;
     }
 }

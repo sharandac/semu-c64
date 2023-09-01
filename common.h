@@ -16,14 +16,10 @@
 static inline int ilog2(uint32_t x)
 {
     // FIXME: likely inefficient (but also rarely used...)
-#if C64
     uint8_t lz=0;
     while(x>>=1)
 	lz++;
     return lz;
-#else
-    return 31 - __builtin_clz(x | 1);
-#endif
 }
 
 /* Range check

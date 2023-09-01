@@ -161,8 +161,8 @@ static bool vnet_iovec_read(struct iovec **vecs,
         /* check for new buffers */                                            \
         uint16_t new_avail = ram[queue->QueueAvail] >> 16;                     \
         if (new_avail - queue->last_avail > (uint16_t) queue->QueueNum)        \
-            return (fprintf(stderr, "size check fail\n"),                      \
-                    virtio_net_set_fail(vnet));                                \
+            return virtio_net_set_fail(vnet);                                  \
+                                                                               \
         if (queue->last_avail == new_avail)                                    \
             return;                                                            \
                                                                                \
@@ -194,8 +194,6 @@ static bool vnet_iovec_read(struct iovec **vecs,
             }                                                                  \
             if (plen < 0) {                                                    \
                 plen = 0;                                                      \
-                fprintf(stderr, "[VNET] could not " #VERB " packet: %s\n",     \
-                        strerror(errno));                                      \
             }                                                                  \
                                                                                \
             /* consume from available queue, write to used queue */            \
@@ -436,8 +434,6 @@ void virtio_net_write(vm_t *vm,
 bool virtio_net_init(virtio_net_state_t *vnet)
 {
     if (vnet_dev_cnt >= VNET_DEV_CNT_MAX) {
-        fprintf(stderr,
-                "Excedded the number of virtio-net device can be allocated.\n");
         exit(2);
     }
 
@@ -446,7 +442,6 @@ bool virtio_net_init(virtio_net_state_t *vnet)
 
     vnet->tap_fd = open("/dev/net/tun", O_RDWR);
     if (vnet->tap_fd < 0) {
-        fprintf(stderr, "failed to open TAP device: %s\n", strerror(errno));
         return false;
     }
 
@@ -454,7 +449,6 @@ bool virtio_net_init(virtio_net_state_t *vnet)
     struct ifreq ifreq = {.ifr_flags = IFF_TAP | IFF_NO_PI};
     strncpy(ifreq.ifr_name, TAP_INTERFACE, sizeof(ifreq.ifr_name));
     if (ioctl(vnet->tap_fd, TUNSETIFF, &ifreq) < 0) {
-        fprintf(stderr, "failed to allocate TAP device: %s\n", strerror(errno));
         return false;
     }
 

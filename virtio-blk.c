@@ -183,7 +183,6 @@ static int virtio_blk_desc_handler(virtio_blk_state_t *vblk,
         virtio_blk_write_handler(vblk, sector, vq_desc[1].addr, vq_desc[1].len);
         break;
     default:
-        fprintf(stderr, "unsupported virtio-blk operation!\n");
         *status = VIRTIO_BLK_S_UNSUPP;
         return -1;
     }
@@ -208,8 +207,7 @@ static void virtio_queue_notify_handler(virtio_blk_state_t *vblk, int index)
     /* Check for new buffers */
     uint16_t new_avail = ram[queue->QueueAvail] >> 16;
     if (new_avail - queue->last_avail > (uint16_t) queue->QueueNum)
-        return (fprintf(stderr, "size check fail\n"),
-                virtio_blk_set_fail(vblk));
+        return virtio_blk_set_fail(vblk);
 
     if (queue->last_avail == new_avail)
         return;
@@ -432,8 +430,6 @@ void virtio_blk_write(vm_t *vm,
 uint32_t *virtio_blk_init(virtio_blk_state_t *vblk, char *disk_file)
 {
     if (vblk_dev_cnt >= VBLK_DEV_CNT_MAX) {
-        fprintf(stderr,
-                "Excedded the number of virtio-blk device can be allocated.\n");
         exit(2);
     }
 
@@ -451,7 +447,6 @@ uint32_t *virtio_blk_init(virtio_blk_state_t *vblk, char *disk_file)
     /* Open disk file */
     int disk_fd = open(disk_file, O_RDWR);
     if (disk_fd < 0) {
-        fprintf(stderr, "could not open %s\n", disk_file);
         exit(2);
     }
 
@@ -464,7 +459,6 @@ uint32_t *virtio_blk_init(virtio_blk_state_t *vblk, char *disk_file)
     uint32_t *disk_mem =
         mmap(NULL, disk_size, PROT_READ | PROT_WRITE, MAP_SHARED, disk_fd, 0);
     if (disk_mem == MAP_FAILED) {
-        fprintf(stderr, "Could not map disk\n");
         return NULL;
     }
     assert(!(((uintptr_t) disk_mem) & 0b11));
