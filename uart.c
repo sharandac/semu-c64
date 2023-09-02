@@ -38,7 +38,7 @@ void u8250_check_ready(u8250_state_t *uart)
     if (uart->in_ready)
         return;
 
-    uart->in_char = keyboard_scan();
+    uart->in_char = keyboard_scan( 0 );
 
     if (uart->in_char != 0)
         uart->in_ready = true;

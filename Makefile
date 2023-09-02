@@ -46,6 +46,6 @@ minimal.dtb: minimal.dts
 	    | $(DTC) - > $@
 
 clean:
-	$(Q)$(RM) $(BIN) $(OBJS) $(deps)
+	$(Q)$(RM) $(BIN) $(OBJS) $(deps) *.elf
 
 -include $(deps)

@@ -9,5 +9,16 @@
  * 
  */
 #pragma once
-
-int16_t keyboard_scan( void );
+    /**
+     * @brief scan keyboard
+     * 
+     * @return 0 if no key pressed, else key
+     */
+    uint16_t keyboard_scan( uint8_t state_only );
+    /**
+     * @brief check for commodore key
+     * 
+     * @return 0x02 if commodore key pressed, else 0
+     */
+    uint16_t keyboard_c_check( void );
+    

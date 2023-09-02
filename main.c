@@ -260,6 +260,11 @@ static int semu_start(int argc, char **argv)
      * init display
      */
     display_init();
+    /*
+     * print some info
+     */
+    display_printf("basic and kernal ROM are disabled, useable RAM from 0x0801-0x%04X\n", display_get_charmap() - 1 );
+    display_printf("bitmap: 0x%04X, colormap: 0x%04X, charmap: 0x%04X\n\n", display_get_bitmap(), display_get_colormap(), display_get_charmap() );
     display_printf("C-64 semu risc-v emulator\n");
     display_printf("Git commit: $Id: 7fd94cf6e0e62f69375dd3ee60ebf7bd275884d0 $\n");
     display_printf("emu state begin: 0x%p, size: 0x%04x\n", &emu, sizeof(emu));

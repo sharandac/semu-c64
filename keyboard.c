@@ -20,48 +20,58 @@
 #include "keyboard.h"
 #include "display.h"
 
-volatile uint8_t lastkey = 0;
-volatile uint8_t key = 0;   
-
-uint8_t unshifted_keys[] = {
+volatile uint8_t lastkey = 0;       /** last pressed key */
+volatile uint8_t key = 0;           /** current pressed key */
+/**
+ * @brief keyboard matrix for unshifted keys
+ */
+const uint8_t unshifted_keys[] = {
     0x18,'\n',0x1D,0x88,0x85,0x86,0x87,0x11,
-    '3' ,'w' ,'a' ,'4' ,'z' ,'s' ,'e' ,0x01,
+    '3' ,'w' ,'a' ,'4' ,'z' ,'s' ,'e' ,0x00,
     '5' ,'r' ,'d' ,'6' ,'c' ,'f' ,'t' ,'x' ,
     '7' ,'y' ,'g' ,'8' ,'b' ,'h' ,'u' ,'v' ,
     '9' ,'i' ,'j' ,'0' ,'m' ,'k' ,'o' ,'n' ,
     '+' ,'p' ,'l' ,'-' ,'.' ,':' ,'@' ,',' ,
-    '_','*' ,';' ,0x13,0x01,'=' ,0x5E,'/' ,
-    '1' ,0x5F,0x04,'2' ,' ' ,0x02,'q' ,0x03
+    '_' ,'*' ,';' ,0x13,0x00,'=' ,0x5E,'/' ,
+    '1' ,0x5F,0x04,'2' ,' ' ,0x00,'q' ,0x03
 };
-
-uint8_t shifted_keys[] = {
+/**
+ * @brief keyboard matrix for shifted keys
+ */
+const uint8_t shifted_keys[] = {
     0x18,'\n',0x9D,0x8C,0x89,0x8A,0x8B,0x91,
-    '#' ,'W' ,'A' ,'$' ,'Z' ,'S' ,'E' ,0x01,
+    '#' ,'W' ,'A' ,'$' ,'Z' ,'S' ,'E' ,0x00,
     '%' ,'R' ,'D' ,'&' ,'C' ,'F' ,'T' ,'X' ,
     '/' ,'Y' ,'G' ,'(' ,'B' ,'H' ,'U' ,'V' ,
     ')' ,'I' ,'J' ,'0' ,'M' ,'K' ,'O' ,'N' ,
     '+' ,'P' ,'L' ,'-' ,'>' ,'[' ,'@' ,'<' ,
-    '-' ,'*' ,']' ,0x93,0x01,'=' ,0xDE,'?' ,
-    '!' ,0x5F,0x04,'"' ,' ' ,0x02,'Q' ,0x83
+    '-' ,'*' ,']' ,0x93,0x00,'=' ,0xDE,'?' ,
+    '!' ,0x5F,0x04,'"' ,' ' ,0x00,'Q' ,0x83
 };
-
-uint8_t ctrl_keys[] = {
+/**
+ * @brief keyboard matrix for ctrl keys
+ */
+const uint8_t ctrl_keys[] = {
     0x0c,'\n',0x9D,0x8C,0x89,0x8A,0x8B,0x91,
-    '#' ,'W' ,'A' ,'$' ,'Z' ,'S' ,'E' ,0x01,
+    '#' ,'W' ,'A' ,'$' ,'Z' ,'S' ,'E' ,0x00,
     '%' ,'R' ,'D' ,'&' ,0x05,'F' ,'T' ,'X' ,
     '/' ,'Y' ,'G' ,'(' ,'B' ,'H' ,'U' ,'V' ,
     ')' ,'I' ,'J' ,'0' ,'M' ,'K' ,'O' ,'N' ,
-    '+' ,'P' ,'L' ,'-' ,'>' ,'[' ,'@' ,'<' ,
-    '-' ,'*' ,']' ,0x93,0x01,'=' ,0xDE,'?' ,
-    '!' ,0x5F,0x04,'"' ,' ' ,0x02,'Q' ,0x83
+    '+' ,'P' ,'L' ,'-' ,'.' ,'[' ,'@' ,',' ,
+    '-' ,'*' ,']' ,0x93,0x00,'=' ,0xDE,'?' ,
+    '!' ,0x5F,0x04,'"' ,' ' ,0x00,'Q' ,0x83
 };
-
-int16_t keyboard_scan( void ) {
-    uint8_t mask = 0;
-    uint8_t shift = 0;
-    uint8_t ctrl = 0;
-    uint8_t row = 0xff;
-    uint8_t col = 0xff;
+/**
+ * @brief scan keyboard
+ * 
+ * @return 0 if no key pressed, else key
+ */
+uint16_t keyboard_scan( uint8_t state_only ) {
+    uint8_t mask = 0;           /** @brief mask for keyboard row */
+    uint8_t shift = 0;          /** @brief shift key pressed */
+    uint8_t ctrl = 0;           /** @brief ctrl key pressed */
+    uint8_t row = 0xff;         /** @brief row of pressed key, 0xff means invalid */
+    uint8_t col = 0xff;         /** @brief column of pressed key, 0xff means invalid */
     /*
      * check for left shift
      */
@@ -98,7 +108,7 @@ int16_t keyboard_scan( void ) {
             /*
              * read column
              */
-            uint8_t temp_col = CIA1.prb;
+            volatile uint8_t temp_col = CIA1.prb;
             /*
              * mask out shift keys
              */
@@ -117,12 +127,18 @@ int16_t keyboard_scan( void ) {
                 break;
             }
         }
+        /*
+         * abort when key found
+         */
+        if( row != 0xff && col != 0xff )
+            break;
     }
     /*
      * check for keypress
      */
     if( row != 0xff && col != 0xff ) {
-        uint8_t* matrix = NULL;
+        const uint8_t* matrix = NULL;
+        uint8_t pressed_key = 0;    /** @brief pressed key */
         /*
          * select matrix
          */
@@ -135,7 +151,13 @@ int16_t keyboard_scan( void ) {
         /*
          * get key
          */
-        key = matrix[ row * 8 + col ];
+        pressed_key = matrix[ row * 8 + col ];
+        /*
+         * return key state witheout key storage when state_only is set
+         */
+        if( state_only )
+            return( pressed_key );
+        key = pressed_key;
         /*
          * key bounce
          */        
@@ -145,17 +167,42 @@ int16_t keyboard_scan( void ) {
             key = 0;
     }
     else {
+        /*
+         * return key state 0 witheout key storage when state_only is set
+         */
+        if( state_only )
+            return( 0 );
         lastkey = 0;
         key = 0;
     }
     /*
-     *
-     */
-    if( key == 0x05 )
-        display_putchar( key );
-    /*
      * return key
      */
     return( key );
+}
+
+/**
+ * @brief check for commodore key
+ * 
+ * @return uint16_t 0x02 if commodore key pressed, else 0
+ */
+uint16_t keyboard_c_check( void ) {
+    uint8_t mask = 0;           /** @brief mask for keyboard row */
+    static uint8_t lastkey = 0; /** @brief last pressed key */
+    /*
+     * check if commodore key is pressed
+     */
+    mask = 0x80;
+    CIA1.pra = ~mask;
+    if( !( CIA1.prb & 0x20 ) ) {
+        if( lastkey == 0 ) {
+            lastkey = 1;
+            return( 0x02 );
+        }
+        else
+            return( 0 );
+    }
+    lastkey = 0;
+    return( 0 );
 }
 

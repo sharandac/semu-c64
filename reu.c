@@ -6,13 +6,6 @@
 
 #include "reu.h"
 
-volatile uint8_t* REU_STATUS=(void*)0xdf00;
-volatile uint8_t* REU_CMD=(void*)0xdf01;
-volatile uint16_t* REU_C64ADR=(void*)0xdf02;
-volatile uint16_t* REU_ADDRLO=(void*)0xdf04;
-volatile uint8_t* REU_ADDRHI=(void*)0xdf06;
-volatile uint16_t* REU_XFERLEN=(void*)0xdf07;
-
 volatile uint32_t reu_addr = 0xf0000000;
 volatile uint32_t reu_page[ REU_PAGE_SIZE / 4 ];
 
@@ -34,11 +27,11 @@ uint32_t loadword_reu(uint32_t addr) {
          * read new page from reu
          */
         reu_addr = addr & 0xffffff00;
-        *REU_C64ADR = (uint16_t)&reu_page;
-        *REU_ADDRLO = reu_addr & 0xffff;
-        *REU_ADDRHI = reu_addr >> 16;
-        *REU_XFERLEN = REU_PAGE_SIZE;
-        *REU_CMD = 0b10010001;
+        REU.c64_address = (uint16_t)&reu_page;
+        REU.reu_address_lo = reu_addr & 0xffff;
+        REU.reu_address_hi = reu_addr >> 16;
+        REU.transfer_length = REU_PAGE_SIZE;
+        REU.command = ( REU_CMD_EXEC | REU_CMD_DIS_DECODE | REU_CMD_REU_TO_C64 );
     }
     // printf( "%08lX, %08lX\n", addr, reu_page[ ( addr & 0xff ) >> 2 ] );
     // VIC.bordercolor = ( addr & 0xff ) >> 2;
@@ -60,9 +53,9 @@ void saveword_reu( uint32_t addr, volatile uint32_t value ) {
     /*
      * always write to reu
      */
-    *REU_C64ADR = (uint16_t)(&value);
-    *REU_ADDRLO = addr & 0xffff;
-    *REU_ADDRHI = addr >> 16;
-    *REU_XFERLEN = 4;
-    *REU_CMD = 0b10010000;
+    REU.c64_address = (uint16_t)(&value);
+    REU.reu_address_lo = addr & 0xffff;
+    REU.reu_address_hi = addr >> 16;
+    REU.transfer_length = 4;
+    REU.command = ( REU_CMD_EXEC | REU_CMD_DIS_DECODE | REU_CMD_C64_TO_REU );
 }
