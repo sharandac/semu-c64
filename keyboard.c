@@ -199,10 +199,12 @@ uint16_t keyboard_c_check( void ) {
             lastkey = 1;
             return( 0x02 );
         }
-        else
+        else {
             return( 0 );
+        }
     }
     lastkey = 0;
     return( 0 );
 }
+
 

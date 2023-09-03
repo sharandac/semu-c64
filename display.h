@@ -12,23 +12,6 @@
 
 #define DISPLAY_X_CHAR      80
 #define DISPLAY_Y_CHAR      25
-
-/**
- * @brief 
- */
-struct region {
-    uint8_t       x;            /** x position */     
-    uint8_t       y;            /** y position */
-    uint8_t       x_size;       /** x size */
-    uint8_t       y_size;       /** y size */
-    uint8_t       x_pos;        /** x cursor position */
-    uint8_t       y_pos;        /** y cursor position */
-    uint8_t       x_pos_start;  /** x cursor start position */
-    uint8_t       y_pos_start;  /** y cursor start position */
-    uint8_t       x_pos_size;   /** x cursor size */
-    uint8_t       y_pos_size;   /** y cursor size */
-    uint8_t*      charmap;      /** charmap */
-};
 /**
  * @brief init C64 display and setup hires mode for 80x25 characters
  * display memory is located at $E000 and colormap at $C400
@@ -84,16 +67,6 @@ uint8_t *display_get_bitmap();
  */
 uint8_t *display_get_colormap();
 /**
- * @brief get display charmap address
- * 
- * @return uint8_t* 
- */
-uint8_t *display_get_charmap();
-/**
- * @brief redraw display from charmap
- */
-void display_redraw();
-/**
  * @brief printf to display
  * 
  * @param format        printf format string
@@ -101,46 +74,3 @@ void display_redraw();
  * @return int          number of characters printed
  */
 int display_printf( const char *format, ...);
-/**
- * @brief save region of display
- * 
- * @param x             x position
- * @param y             y position
- * @param x_size        x size
- * @param y_size        y size
- * @return struct region*
- */
-struct region *display_save_region( uint8_t x, uint8_t y, uint8_t x_size, uint8_t y_size );
-/**
- * @brief restore region of display
- * 
- * @param region        region to restore
- */
-void display_restore_region( struct region *region );
-/**
- * @brief draw frame
- * 
- * @param x             x position
- * @param y             y position
- * @param x_size        x size
- * @param y_size        y size
- */
-void display_draw_frame( uint8_t x, uint8_t y, uint8_t x_size, uint8_t y_size );
-/**
- * @brief redraw a area of the display
- * 
- * @param x             x position
- * @param y             y position
- * @param x_size        x size
- * @param y_size        y size
- */
-void display_redraw_area( uint8_t x, uint8_t y, uint8_t x_size, uint8_t y_size);
-/**
- * @brief clear a area of the display
- * 
- * @param x             x position
- * @param y             y position
- * @param x_size        x size
- * @param y_size        y size
- */
-void display_clear_area( uint8_t x, uint8_t y, uint8_t x_size, uint8_t y_size );

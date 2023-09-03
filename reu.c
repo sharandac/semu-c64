@@ -26,7 +26,7 @@ uint32_t loadword_reu(uint32_t addr) {
         /*
          * read new page from reu
          */
-        reu_addr = addr & 0xffffff00;
+        reu_addr = addr & 0xffffff00;        
         REU.c64_address = (uint16_t)&reu_page;
         REU.reu_address_lo = reu_addr & 0xffff;
         REU.reu_address_hi = reu_addr >> 16;

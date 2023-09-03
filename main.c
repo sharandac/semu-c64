@@ -257,14 +257,25 @@ static int semu_start(int argc, char **argv)
     /* Set up peripherals */
     emu.uart.in_fd = 0, emu.uart.out_fd = 1;
     /*
+     * disable interrupts and knock out kernal, basic
+     *
+     * memory map:  0x0801-0xCFFF    free to use RAM
+     *              0xD000-0xD3FF    I/O
+     *              0xD800-0xDCFF    color ram
+     *              0xDD00-0xDFFF    I/O
+     *              0xE000-0xFFFF    bitmap
+     */
+    SEI();
+    *(uint8_t*)0x0001 = 0x35;
+    /*
      * init display
      */
     display_init();
     /*
      * print some info
      */
-    display_printf("basic and kernal ROM are disabled, useable RAM from 0x0801-0x%04X\n", display_get_charmap() - 1 );
-    display_printf("bitmap: 0x%04X, colormap: 0x%04X, charmap: 0x%04X\n\n", display_get_bitmap(), display_get_colormap(), display_get_charmap() );
+    display_printf("basic and kernal ROM are disabled, useable RAM from 0x0801-0xCFFF\n" );
+    display_printf("bitmap: 0x%04X, colormap: 0x%04X\n\n", display_get_bitmap(), display_get_colormap() );
     display_printf("C-64 semu risc-v emulator\n");
     display_printf("Git commit: $Id: 7fd94cf6e0e62f69375dd3ee60ebf7bd275884d0 $\n");
     display_printf("emu state begin: 0x%p, size: 0x%04x\n", &emu, sizeof(emu));
@@ -275,6 +286,7 @@ static int semu_start(int argc, char **argv)
     while (!emu.stopped) {
         if (peripheral_update_ctr-- == 0) {
             display_update_cursor();
+            // debug_menu( &vm );
             u8250_check_ready(&emu.uart);
             if (emu.uart.in_ready)
                 emu_update_uart_interrupts(&vm);
