@@ -1,9 +1,11 @@
+This is a heavily modified version of https://github.com/onnokort/semu-c64 extended by a 80x25 terminal and modified memory mapping (without Kernal and Basic ROM). This version contains only the C64 part.
+
 # Running Linux on a Commodore C-64
 
 "But does it run Linux?" can now be finally and affirmatively answered
 for the Commodore C64!
 
-![Booted](booted.jpeg)
+![Booted](images/vice-screen-2023090219062918.png)
 
 There is a catch (rather: a couple) of course: It runs *extremely*
 slowly and it needs a RAM Expansion Unit (REU), as there is no chance
