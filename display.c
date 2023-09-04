@@ -10,6 +10,8 @@
  */
 #include <c64.h>
 #include <6502.h>
+#include <cbm.h>
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,6 +60,8 @@ void display_init() {
      * clear display and set color
      */
     display_clear();
+
+    cbm_k_open();
 
     return;
 }
@@ -126,6 +130,8 @@ void display_puts( char *s ) {
 }
 
 void display_putchar( char c ) {
+    volatile static uint8_t esc = 0;
+
     display_char( x_pos, y_pos, ' ' );
     switch( c ) {
         case '\n':  {
@@ -151,7 +157,24 @@ void display_putchar( char c ) {
                         }
                         break;
                     }
+        case 0x1b:  {
+                        esc = 1;
+                        break;
+                    }
+        case '[':   {
+                        if( esc == 1) {
+                            esc = 2;
+                            break;
+                        }
+                        else {
+                            esc = 0;
+                        }
+                    }   
         default:    {
+                        if( esc  && c == 'm' ) {
+                            esc = 0;
+                            break;
+                        }
                         display_char( x_pos, y_pos, c );
                         x_pos++;
                         if( x_pos == DISPLAY_X_CHAR ) {
