@@ -1,7 +1,7 @@
 include mk/common.mk
 
 CC = mos-c64-clang
-CFLAGS := -O3 -g -Wall -Wextra -flto
+CFLAGS := -Os -g -Wall -Wextra -flto
 CFLAGS += -include common.h
 
 BIN = semu
@@ -16,6 +16,7 @@ OBJS := \
 	reu.o \
 	display.o \
 	keyboard.o \
+	debug.o \
 	$(OBJS_EXTRA)
 
 deps := $(OBJS:%.o=.%.o.d)

@@ -6,11 +6,39 @@
 #include <string.h>
 
 #include "device.h"
+#include "debug.h"
 #include "riscv.h"
 #include "riscv_private.h"
 
 #include "reu.h"
 #include "display.h"
+
+/* SBI */
+#define SBI_IMPL_ID 0x999
+#define SBI_IMPL_VERSION 1
+
+#define RV_MVENDORID 0x12345678
+#define RV_MARCHID ((1UL << 31) | 1)
+#define RV_MIMPID 1
+
+#define SBI_HANDLE(TYPE) ret = handle_sbi_ecall_##TYPE(vm, vm->x_regs[RV_R_A6])
+
+typedef struct {
+    int32_t error;
+    int32_t value;
+} sbi_ret_t;
+
+static void mem_fetch(vm_t *vm, uint32_t addr, uint32_t *value);
+static void mem_load(vm_t *vm, uint32_t addr, uint8_t width, uint32_t *value);
+static void mem_store(vm_t *vm, uint32_t addr, uint8_t width, uint32_t value);
+
+emu_state_t emu;
+vm_t vm = {
+        .priv = &emu,
+        .mem_fetch = mem_fetch,
+        .mem_load = mem_load,
+        .mem_store = mem_store
+};
 
 /* Define fetch separately since it is simpler (fixed width, already checked
  * alignment, only main RAM is executable).
@@ -64,36 +92,42 @@ static void mem_load(vm_t *vm, uint32_t addr, uint8_t width, uint32_t *value)
 {
     emu_state_t *data = (emu_state_t *) vm->priv;
 
-    /* RAM at 0x00000000 + RAM_SIZE */
+    /*
+     * test if addr in RAM at 0x00000000 + RAM_SIZE
+     */
     if (addr < RAM_SIZE) {
         ram_read(vm, data->ram, addr, width, value);
         return;
     }
-
-    if ((addr >> 28) == 0xF) { /* MMIO at 0xF_______ */
-        /* 256 regions of 1MiB */
-        switch ((addr >> 20) & MASK(8)) {
-        case 0x0:
-        case 0x2: /* PLIC (0 - 0x3F) */
-            plic_read(vm, &data->plic, addr & 0x3FFFFFF, width, value);
-            plic_update_interrupts(vm, &data->plic);
-            return;
-        case 0x40: /* UART */
-            u8250_read(vm, &data->uart, addr & 0xFFFFF, width, value);
-            emu_update_uart_interrupts(vm);
-            return;
-#if SEMU_HAS(VIRTIONET)
-        case 0x41: /* virtio-net */
-            virtio_net_read(vm, &data->vnet, addr & 0xFFFFF, width, value);
-            emu_update_vnet_interrupts(vm);
-            return;
-#endif
-#if SEMU_HAS(VIRTIOBLK)
-        case 0x42: /* virtio-blk */
-            virtio_blk_read(vm, &data->vblk, addr & 0xFFFFF, width, value);
-            emu_update_vblk_interrupts(vm);
-            return;
-#endif
+    /*
+     * test if addr in MMIO at 0xF_______
+     */
+    if ( ( addr >> 28 ) == 0xF ) {
+        /*
+         * 256 regions of 1MiB
+         */
+        switch ( (addr >> 20) & MASK(8) ) {
+            case 0x0:
+            case 0x2:   /* PLIC (0 - 0x3F) */
+                        plic_read(vm, &data->plic, addr & 0x3FFFFFF, width, value);
+                        plic_update_interrupts(vm, &data->plic);
+                        return;
+            case 0x40:  /* UART */
+                        u8250_read(vm, &data->uart, addr & 0xFFFFF, width, value);
+                        emu_update_uart_interrupts(vm);
+                        return;
+        #if SEMU_HAS(VIRTIONET)
+            case 0x41:  /* virtio-net */
+                        virtio_net_read(vm, &data->vnet, addr & 0xFFFFF, width, value);
+                        emu_update_vnet_interrupts(vm);
+                        return;
+        #endif
+        #if SEMU_HAS(VIRTIOBLK)
+            case 0x42: /* virtio-blk */
+                        virtio_blk_read(vm, &data->vblk, addr & 0xFFFFF, width, value);
+                        emu_update_vblk_interrupts(vm);
+                        return;
+        #endif
         }
     }
     vm_set_exception(vm, RV_EXC_LOAD_FAULT, vm->exc_val);
@@ -103,137 +137,122 @@ static void mem_store(vm_t *vm, uint32_t addr, uint8_t width, uint32_t value)
 {
     emu_state_t *data = (emu_state_t *) vm->priv;
 
-    /* RAM at 0x00000000 + RAM_SIZE */
+    /*
+     * test if addr in RAM at 0x00000000 + RAM_SIZE
+     */
     if (addr < RAM_SIZE) {
         ram_write(vm, data->ram, addr, width, value);
         return;
     }
-
-    if ((addr >> 28) == 0xF) { /* MMIO at 0xF_______ */
-        /* 256 regions of 1MiB */
+    /*
+     * test if addr in MMIO at 0xF_______
+     */
+    if ( ( addr >> 28 ) == 0xF ) {
+        /*
+         * 256 regions of 1MiB
+         */
         switch ((addr >> 20) & MASK(8)) {
-        case 0x0:
-        case 0x2: /* PLIC (0 - 0x3F) */
-            plic_write(vm, &data->plic, addr & 0x3FFFFFF, width, value);
-            plic_update_interrupts(vm, &data->plic);
-            return;
-        case 0x40: /* UART */
-            u8250_write(vm, &data->uart, addr & 0xFFFFF, width, value);
-            emu_update_uart_interrupts(vm);
-            return;
-#if SEMU_HAS(VIRTIONET)
-        case 0x41: /* virtio-net */
-            virtio_net_write(vm, &data->vnet, addr & 0xFFFFF, width, value);
-            emu_update_vnet_interrupts(vm);
-            return;
-#endif
-#if SEMU_HAS(VIRTIOBLK)
-        case 0x42: /* virtio-blk */
-            virtio_blk_write(vm, &data->vblk, addr & 0xFFFFF, width, value);
-            emu_update_vblk_interrupts(vm);
-            return;
-#endif
+            case 0x0:
+            case 0x2:   /* PLIC (0 - 0x3F) */
+                        plic_write(vm, &data->plic, addr & 0x3FFFFFF, width, value);
+                        plic_update_interrupts(vm, &data->plic);
+                        return;
+            case 0x40:  /* UART */
+                        u8250_write(vm, &data->uart, addr & 0xFFFFF, width, value);
+                        emu_update_uart_interrupts(vm);
+                        return;
+        #if SEMU_HAS(VIRTIONET)
+            case 0x41: /* virtio-net */
+                        virtio_net_write(vm, &data->vnet, addr & 0xFFFFF, width, value);
+                        emu_update_vnet_interrupts(vm);
+                        return;
+        #endif
+        #if SEMU_HAS(VIRTIOBLK)
+            case 0x42: /* virtio-blk */
+                        virtio_blk_write(vm, &data->vblk, addr & 0xFFFFF, width, value);
+                        emu_update_vblk_interrupts(vm);
+                        return;
+        #endif
         }
     }
     vm_set_exception(vm, RV_EXC_STORE_FAULT, vm->exc_val);
 }
 
-/* SBI */
-#define SBI_IMPL_ID 0x999
-#define SBI_IMPL_VERSION 1
-
-typedef struct {
-    int32_t error;
-    int32_t value;
-} sbi_ret_t;
-
 static inline sbi_ret_t handle_sbi_ecall_TIMER(vm_t *vm, int32_t fid)
 {
     emu_state_t *data = (emu_state_t *) vm->priv;
+    sbi_ret_t retval = { SBI_ERR_NOT_SUPPORTED, 0 };
+    
     switch (fid) {
-    case SBI_TIMER__SET_TIMER:
-        data->timer_lo = vm->x_regs[RV_R_A0];
-        data->timer_hi = vm->x_regs[RV_R_A1];
-        return (sbi_ret_t){SBI_SUCCESS, 0};
-    default:
-        return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
+        case SBI_TIMER__SET_TIMER:
+                data->timer_lo = vm->x_regs[RV_R_A0];
+                data->timer_hi = vm->x_regs[RV_R_A1];
+                retval.error = SBI_SUCCESS;
     }
+    return retval;
 }
 
 static inline sbi_ret_t handle_sbi_ecall_RST(vm_t *vm, int32_t fid)
 {
     emu_state_t *data = (emu_state_t *) vm->priv;
-    switch (fid) {
-    case SBI_RST__SYSTEM_RESET:
-        data->stopped = true;
-        return (sbi_ret_t){SBI_SUCCESS, 0};
-    default:
-        return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
-    }
-}
+    sbi_ret_t retval = { SBI_ERR_NOT_SUPPORTED, 0 };
 
-#define RV_MVENDORID 0x12345678
-#define RV_MARCHID ((1UL << 31) | 1)
-#define RV_MIMPID 1
+    switch (fid) {
+        case SBI_RST__SYSTEM_RESET:
+                data->stopped = true;
+                retval.error = SBI_SUCCESS;
+    }
+    return retval;
+}
 
 static inline sbi_ret_t handle_sbi_ecall_BASE(vm_t *vm, int32_t fid)
 {
     switch (fid) {
-    case SBI_BASE__GET_SBI_IMPL_ID:
-        return (sbi_ret_t){SBI_SUCCESS, SBI_IMPL_ID};
-    case SBI_BASE__GET_SBI_IMPL_VERSION:
-        return (sbi_ret_t){SBI_SUCCESS, SBI_IMPL_VERSION};
-    case SBI_BASE__GET_MVENDORID:
-        return (sbi_ret_t){SBI_SUCCESS, RV_MVENDORID};
-    case SBI_BASE__GET_MARCHID:
-        return (sbi_ret_t){SBI_SUCCESS, RV_MARCHID};
-    case SBI_BASE__GET_MIMPID:
-        return (sbi_ret_t){SBI_SUCCESS, RV_MIMPID};
-    case SBI_BASE__GET_SBI_SPEC_VERSION:
-        return (sbi_ret_t){SBI_SUCCESS, (0UL << 24) | 3}; /* version 0.3 */
-    case SBI_BASE__PROBE_EXTENSION: {
-        int32_t eid = (int32_t) vm->x_regs[RV_R_A0];
-        bool available =
-            eid == SBI_EID_BASE || eid == SBI_EID_TIMER || eid == SBI_EID_RST;
-        return (sbi_ret_t){SBI_SUCCESS, available};
-    }
-    default:
-        return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
+        case SBI_BASE__GET_SBI_IMPL_ID:
+                return (sbi_ret_t){SBI_SUCCESS, SBI_IMPL_ID};
+        case SBI_BASE__GET_SBI_IMPL_VERSION:
+                return (sbi_ret_t){SBI_SUCCESS, SBI_IMPL_VERSION};
+        case SBI_BASE__GET_MVENDORID:
+                return (sbi_ret_t){SBI_SUCCESS, RV_MVENDORID};
+        case SBI_BASE__GET_MARCHID:
+                return (sbi_ret_t){SBI_SUCCESS, RV_MARCHID};
+        case SBI_BASE__GET_MIMPID:
+                return (sbi_ret_t){SBI_SUCCESS, RV_MIMPID};
+        case SBI_BASE__GET_SBI_SPEC_VERSION:
+                return (sbi_ret_t){SBI_SUCCESS, (0UL << 24) | 3}; /* version 0.3 */
+        case SBI_BASE__PROBE_EXTENSION:
+                {
+                    int32_t eid = (int32_t) vm->x_regs[RV_R_A0];
+                    bool available = eid == SBI_EID_BASE || eid == SBI_EID_TIMER || eid == SBI_EID_RST;
+                    return (sbi_ret_t){SBI_SUCCESS, available};
+                }
+        default:
+                return (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
     }
 }
-
-#define SBI_HANDLE(TYPE) ret = handle_sbi_ecall_##TYPE(vm, vm->x_regs[RV_R_A6])
 
 static void handle_sbi_ecall(vm_t *vm)
 {
     sbi_ret_t ret;
+
     switch (vm->x_regs[RV_R_A7]) {
-    case SBI_EID_BASE:
-        SBI_HANDLE(BASE);
-        break;
-    case SBI_EID_TIMER:
-        SBI_HANDLE(TIMER);
-        break;
-    case SBI_EID_RST:
-        SBI_HANDLE(RST);
-        break;
-    default:
-        ret = (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
+        case SBI_EID_BASE:
+            SBI_HANDLE(BASE);
+            break;
+        case SBI_EID_TIMER:
+            SBI_HANDLE(TIMER);
+            break;
+        case SBI_EID_RST:
+            SBI_HANDLE(RST);
+            break;
+        default:
+            ret = (sbi_ret_t){SBI_ERR_NOT_SUPPORTED, 0};
     }
     vm->x_regs[RV_R_A0] = (uint32_t) ret.error;
     vm->x_regs[RV_R_A1] = (uint32_t) ret.value;
-
     /* Clear error to allow execution to continue */
     vm->error = ERR_NONE;
 }
-
-emu_state_t emu;
-vm_t vm = {
-        .priv = &emu,
-        .mem_fetch = mem_fetch,
-        .mem_load = mem_load,
-        .mem_store = mem_store
-};
 
 __attribute__((nonreentrant))
 static int semu_start(int argc, char **argv)
@@ -241,6 +260,7 @@ static int semu_start(int argc, char **argv)
     (void) argc;
     (void) argv;
     uint8_t peripheral_update_ctr = 0;      /** @brief peripheral update counter */
+    uint8_t debug_update_ctr = 0;      /** @brief peripheral update counter */
     uint32_t dtb_addr = RAM_SIZE - INITRD_SIZE - DTB_SIZE;
     /*
      * Initialize the emulator
@@ -275,7 +295,7 @@ static int semu_start(int argc, char **argv)
      * print some info
      */
     display_printf("basic and kernal ROM are disabled, useable RAM from 0x0801-0xCFFF\n" );
-    display_printf("bitmap: 0x%04X, colormap: 0x%04X\n\n", display_get_bitmap(), display_get_colormap() );
+    display_printf("bitmap: 0x%04X, colormap: 0x%04X, virtual charmap: 0x%04X\n\n", display_get_bitmap(), display_get_colormap(), display_get_charmap() );
     display_printf("C-64 semu risc-v emulator\n");
     display_printf("Git commit: $Id: 7fd94cf6e0e62f69375dd3ee60ebf7bd275884d0 $\n");
     display_printf("emu state begin: 0x%p, size: 0x%04x\n", &emu, sizeof(emu));
@@ -286,7 +306,6 @@ static int semu_start(int argc, char **argv)
     while (!emu.stopped) {
         if (peripheral_update_ctr-- == 0) {
             display_update_cursor();
-            // debug_menu( &vm );
             u8250_check_ready(&emu.uart);
             if (emu.uart.in_ready)
                 emu_update_uart_interrupts(&vm);
@@ -310,6 +329,10 @@ static int semu_start(int argc, char **argv)
             /* Stop after fixed amount of instructions for performance testing or
                to cross-check instruction traces etc. */
             //if (vm.insn_count > 200000000) exit(0);
+        }
+
+        if( debug_update_ctr-- == 0 ) {
+            debug_update_ctr = debug_menu( &vm );
         }
 
         vm_step(&vm);

@@ -33,8 +33,9 @@ uint32_t loadword_reu(uint32_t addr) {
         REU.transfer_length = REU_PAGE_SIZE;
         REU.command = ( REU_CMD_EXEC | REU_CMD_DIS_DECODE | REU_CMD_REU_TO_C64 );
     }
-    // printf( "%08lX, %08lX\n", addr, reu_page[ ( addr & 0xff ) >> 2 ] );
-    // VIC.bordercolor = ( addr & 0xff ) >> 2;
+    /*
+     * get byte from cache
+     */
     return( reu_page[ ( addr & 0xff ) >> 2 ] );
 }
 
